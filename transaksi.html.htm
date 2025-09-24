@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Transaksi Penjualan</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body class="bg-light">
+<div class="container py-4">
+  <h1 class="mb-4 text-center">🛒 Transaksi Penjualan</h1>
+
+  <!-- Form Pilih Produk -->
+  <div class="card p-3 mb-4">
+    <div class="row g-2">
+      <div class="col-md">
+        <select id="produkSelect" class="form-select">
+          <option value="">-- Pilih Produk --</option>
+        </select>
+      </div>
+      <div class="col-md">
+        <input type="number" id="harga" class="form-control" placeholder="Harga" readonly>
+      </div>
+      <div class="col-md">
+        <input type="number" id="jumlah" class="form-control" placeholder="Jumlah">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary" onclick="tambahDetail()">Tambah</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabel Detail -->
+  <table class="table table-bordered bg-white">
+    <thead>
+      <tr>
+        <th>Produk</th>
+        <th>Harga</th>
+        <th>Jumlah</th>
+        <th>Subtotal</th>
+      </tr>
+    </thead>
+    <tbody id="detailList"></tbody>
+    <tfoot>
+      <tr>
+        <th colspan="3" class="text-end">Total</th>
+        <th id="total">0</th>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Simpan -->
+  <div class="d-flex justify-content-end align-items-center">
+    <span class="me-3 fw-bold">Candice Scarlett</span>
+    <button class="btn btn-success" onclick="simpanTransaksi()">Simpan</button>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://vatlzlgoqdauzhrzsbin.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhdGx6bGdvcWRhdXpocnpzYmluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NjQ2MjIsImV4cCI6MjA3MzA0MDYyMn0.NdnJSHLqWoa5k4nfPdN1OcL9uuM2nGfSqOX88dyGWgU"; // pakai yang kamu sudah punya
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let produkData = [];
+let detail = [];
+
+// Load produk ke dropdown
+async function loadProduk() {
+  const { data, error } = await db.from("produk").select("*").order("nama");
+  if (error) {
+    alert("Gagal load produk: " + error.message);
+    return;
+  }
+  produkData = data;
+  const select = document.getElementById("produkSelect");
+  data.forEach(p => {
+    let opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.nama;
+    select.appendChild(opt);
+  });
+}
+
+// Saat produk dipilih, tampilkan harga
+document.getElementById("produkSelect").addEventListener("change", function() {
+  let id = this.value;
+  let p = produkData.find(x => x.id == id);
+  document.getElementById("harga").value = p ? p.harga : "";
+});
+
+// Tambah detail ke tabel
+function tambahDetail() {
+  let id = document.getElementById("produkSelect").value;
+  let jumlah = parseInt(document.getElementById("jumlah").value);
+  let p = produkData.find(x => x.id == id);
+  if (!p || !jumlah) {
+    alert("Pilih produk dan isi jumlah!");
+    return;
+  }
+  let subtotal = p.harga * jumlah;
+  detail.push({ produk_id: p.id, nama: p.nama, harga: p.harga, jumlah, subtotal });
+  renderDetail();
+  document.getElementById("jumlah").value = "";
+}
+
+// Render tabel detail
+function renderDetail() {
+  let tbody = document.getElementById("detailList");
+  tbody.innerHTML = "";
+  let total = 0;
+  detail.forEach(d => {
+    total += d.subtotal;
+    let tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${d.nama}</td>
+      <td>${d.harga}</td>
+      <td>${d.jumlah}</td>
+      <td>${d.subtotal}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById("total").textContent = total;
+}
+
+// Simpan transaksi
+async function simpanTransaksi() {
+  if (detail.length == 0) {
+    alert("Belum ada item!");
+    return;
+  }
+  let total = detail.reduce((sum, d) => sum + d.subtotal, 0);
+
+  // insert ke tabel penjualan
+  let { data: penjualan, error } = await db.from("penjualan").insert([{ total }]).select();
+  if (error) {
+    alert("Gagal simpan penjualan: " + error.message);
+    return;
+  }
+  let penjualan_id = penjualan[0].id;
+
+  // insert detail
+  let detailsInsert = detail.map(d => ({
+    penjualan_id,
+    produk_id: d.produk_id,
+    jumlah: d.jumlah,
+    harga: d.harga,
+    subtotal: d.subtotal
+  }));
+  let { error: err2 } = await db.from("penjualan_detail").insert(detailsInsert);
+  if (err2) {
+    alert("Gagal simpan detail: " + err2.message);
+    return;
+  }
+
+  Swal.fire("Sukses", "Transaksi berhasil disimpan!", "success");
+  detail = [];
+  renderDetail();
+}
+
+loadProduk();
+</script>
+</body>
+</html>
